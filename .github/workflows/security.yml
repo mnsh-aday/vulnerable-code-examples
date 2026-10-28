@@ -1,36 +1,39 @@
-name: Security Review
-
-permissions:
-  pull-requests: write
-  contents: read
+name: Claude Security Full Scan
 
 on:
   workflow_dispatch:
-
-  push:
-    branches: ["main"]
-
-  pull_request:
-    branches: ["main"]
-
   schedule:
-    - cron: "26 11 * * 2"
+    - cron: "0 2 * * 1"
+
+permissions:
+  contents: read
 
 jobs:
-  security:
+  scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 180
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Run Claude Code Security Review
-        uses: anthropics/claude-code-security-review@main
+      - uses: actions/setup-node@v4
         with:
-          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
-          comment-pr: ${{ github.event_name == 'pull_request' }}
-          upload-results: true
+          node-version: 20
+
+      - name: Install Claude Code + plugin
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude plugin marketplace add anthropics/claude-plugins-official
+          claude plugin install claude-security@claude-plugins-official
+
+      - name: Run scan
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+        run: |
+          claude -p "Run a Claude Security scan on the whole repo at medium. I accept the time and token cost; do not ask for confirmation." \
+            --permission-mode bypassPermissions
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: claude-security-report
+          path: CLAUDE-SECURITY-*/
